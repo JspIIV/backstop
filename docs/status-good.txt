@@ -1,0 +1,9 @@
+Example API - Status & Uptime
+Reporting period: this coverage window
+
+Overall uptime: 99.98%
+Incidents: none
+Longest outage this period: 0 minutes
+
+All systems operational. The service met its availability target across the entire
+window with no outage. Response times stayed within normal bounds throughout.

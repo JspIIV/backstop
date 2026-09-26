@@ -1,0 +1,9 @@
+Example API - Status & Uptime
+Reporting period: this coverage window
+
+Overall uptime: 96.2%
+Incidents: 1 major outage
+Longest outage this period: 6 hours 14 minutes on the 12th
+
+A prolonged outage took the API offline for over six hours during this window,
+bringing measured availability well below the target. A post-mortem is pending.

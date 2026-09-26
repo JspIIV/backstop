@@ -1,0 +1,9 @@
+{
+  "name": "backstop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SLA escrow that releases to the provider if uptime held and refunds the buyer if it did not, on GenLayer.",
+  "scripts": { "deploy": "node scripts/deploy.mjs", "prove": "node scripts/prove.mjs" },
+  "dependencies": { "ethers": "^6", "genlayer-js": "1.1.8" }
+}
