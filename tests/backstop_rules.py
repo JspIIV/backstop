@@ -1,11 +1,11 @@
-"""The escrow rules, exercised through the real contract methods.
+"""The escrow rules, with a real deposit, exercised through the real contract methods.
 
 backstop.py is loaded against a stub of the runtime, a real Backstop is built, and the
-assertions go through open_sla() and settle(). The stub controls the page the round
-fetches, the verdict it returns, and the clock, so a window can be made to lie in the
-future when the SLA opens and in the past when it settles. It proves an SLA cannot be
-settled before its window, that MET releases to the provider and MISSED refunds the
-buyer, and that an unreadable or not-found page moves nothing.
+assertions go through open_sla() (payable) and settle(). The stub controls the page the
+round fetches, the verdict it returns, the clock, and the native value deposited, and it
+records every emit_transfer. It proves opening an SLA escrows the value deposited, MET
+transfers that deposit to the provider and MISSED refunds the buyer (each once), an invalid
+open returns the deposit, and an unreadable page moves nothing.
 
     python tests/backstop_rules.py
 """
@@ -27,7 +27,7 @@ class _Store:
 
 
 class _Address:
-    def __init__(self, hex_value): self.as_hex = hex_value
+    def __init__(self, hex_value): self.as_hex = str(hex_value)
     def __str__(self): return str(self.as_hex)
 
 
@@ -35,6 +35,19 @@ class _Message:
     def __init__(self):
         self.sender_address = _Address("0x" + "0" * 40)
         self.value = 0
+
+
+class _Evm:
+    def __init__(self):
+        self.transfers = []
+        outer = self
+
+        def contract_interface(cls):
+            class Bound:
+                def __init__(self, address): self.address = str(address).lower()
+                def emit_transfer(self, value): outer.transfers.append((self.address, int(value)))
+            return Bound
+        self.contract_interface = contract_interface
 
 
 class _Web:
@@ -78,6 +91,7 @@ class _GL:
         self.Contract = object
         self.public = _PublicNS()
         self.message = _Message()
+        self.evm = _Evm()
         self.nondet = _Nondet(_Web())
         self.eq_principle = _EqPrinciple()
 
@@ -122,14 +136,11 @@ TARGET = "99.9% uptime with no outage over one hour"
 NOW = 1_000_000_000
 FUTURE = NOW + 3600
 PAST = NOW - 3600
+ESCROW = 100
 
 
 def answer(verdict, figure="", reason="r", quote="q"):
     return json.dumps({"verdict": verdict, "figure": figure, "reason": reason, "quote": quote})
-
-
-def bal(c, who):
-    return json.loads(c.balance(who))["balance"]
 
 
 def main():
@@ -138,6 +149,7 @@ def main():
     module._now = lambda: clock["now"]
 
     def as_(address): gl.message.sender_address = _Address(address)
+    def value(v): gl.message.value = int(v)
 
     print("the pure window and outcome rules")
     check_("a future window is valid", module._valid_window(str(FUTURE), NOW)[0])
@@ -146,68 +158,79 @@ def main():
     check_("MISSED refunds the buyer", module._outcome("MISSED") == ("REFUNDED", "buyer"))
     check_("UNCLEAR holds the escrow", module._outcome("UNCLEAR") == ("FUNDED", ""))
 
-    print("\nopening an SLA")
+    print("\nopening an SLA escrows the value deposited, and an invalid open returns it")
     c = fresh(module)
-    as_(BUYER)
-    check_("a buyer cannot open an SLA against themselves",
-           not json.loads(c.open_sla(BUYER, SERVICE, URL, TARGET, str(FUTURE), "100"))["ok"])
-    check_("a zero escrow is refused", not json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE), "0"))["ok"])
-    check_("a window in the past is refused", not json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(PAST), "100"))["ok"])
-    opened = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE), "100"))
+    as_(BUYER); value(0)
+    check_("an unfunded SLA is refused", not json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE)))["ok"])
+    gl.evm.transfers.clear()
+    as_(BUYER); value(ESCROW)
+    selfdeal = json.loads(c.open_sla(BUYER, SERVICE, URL, TARGET, str(FUTURE)))
+    check_("a buyer cannot open an SLA against themselves, and the deposit is returned",
+           not selfdeal["ok"] and gl.evm.transfers == [(BUYER, ESCROW)])
+    gl.evm.transfers.clear()
+    as_(BUYER); value(ESCROW)
+    backdated = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(PAST)))
+    check_("a window in the past is refused and the deposit is returned",
+           not backdated["ok"] and gl.evm.transfers == [(BUYER, ESCROW)])
+    gl.evm.transfers.clear()
+    as_(BUYER); value(ESCROW)
+    opened = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE)))
     sid = opened["id"]
-    check_("a good SLA opens FUNDED", opened["ok"] and opened["status"] == "FUNDED")
+    check_("a funded SLA opens FUNDED with escrow equal to the deposit", opened["ok"] and opened["escrow"] == str(ESCROW))
+    check_("nothing is paid out on open; the deposit is held", gl.evm.transfers == [])
+    check_("the held escrow is tracked", json.loads(c.size())["escrow_held"] == str(ESCROW))
 
     print("\nan SLA cannot be settled before its window closes")
+    value(0)
     clock["now"] = NOW + 10
     early = json.loads(c.settle(sid))
     check_("settling before the window is refused", not early["ok"] and "too early" in early["error"])
-    check_("and it stays funded", json.loads(c.status(sid))["status"] == "FUNDED")
 
-    print("\nthe target is met over the window: the escrow is released to the provider")
+    print("\nthe target is met: the deposit is released to the provider, once")
     clock["now"] = FUTURE + 10
-    gl.nondet.answer = answer("MET", figure="99.98%", reason="uptime above target, no long outage")
+    gl.nondet.answer = answer("MET", figure="99.98%", reason="uptime above target")
     met = json.loads(c.settle(sid))
     check_("MET releases the SLA", met["status"] == "RELEASED" and met["beneficiary"] == "provider")
-    check_("the escrow is credited to the provider", bal(c, PROVIDER) == 100)
-    check_("the buyer is credited nothing", bal(c, BUYER) == 0)
+    check_("the deposit is transferred to the provider", gl.evm.transfers == [(PROVIDER, ESCROW)])
     check_("the window was put in front of the round",
            gl.nondet.last_prompt is not None and json.loads(c.get(sid))["window_iso"] in gl.nondet.last_prompt)
+    gl.evm.transfers.clear()
     check_("a released SLA cannot be settled again", not json.loads(c.settle(sid))["ok"])
+    check_("and pays no second time", gl.evm.transfers == [])
 
-    print("\nthe target is missed: the escrow is refunded to the buyer")
-    as_(BUYER)
-    clock["now"] = NOW
-    miss = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE), "250"))["id"]
+    print("\nthe target is missed: the deposit is refunded to the buyer")
+    as_(BUYER); clock["now"] = NOW; value(250)
+    miss = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE)))["id"]
+    gl.evm.transfers.clear()
     clock["now"] = FUTURE + 10
-    gl.nondet.answer = answer("MISSED", figure="96.2%", reason="a six-hour outage below target")
+    gl.nondet.answer = answer("MISSED", figure="96.2%", reason="a six-hour outage")
     r2 = json.loads(c.settle(miss))
     check_("MISSED refunds the SLA", r2["status"] == "REFUNDED" and r2["beneficiary"] == "buyer")
-    check_("the escrow is credited back to the buyer", bal(c, BUYER) == 250)
+    check_("the deposit is refunded to the buyer", gl.evm.transfers == [(BUYER, 250)])
 
     print("\nan unreadable or not-found page moves nothing")
-    as_(BUYER)
-    clock["now"] = NOW
-    held = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE), "70"))["id"]
+    as_(BUYER); clock["now"] = NOW; value(70)
+    held = json.loads(c.open_sla(PROVIDER, SERVICE, URL, TARGET, str(FUTURE)))["id"]
+    gl.evm.transfers.clear()
     clock["now"] = FUTURE + 10
     gl.nondet.web.page = None
     u1 = json.loads(c.settle(held))
     check_("an unreadable page is UNCLEAR and the SLA stays FUNDED", u1["verdict"] == "UNCLEAR" and json.loads(c.status(held))["status"] == "FUNDED")
     gl.nondet.web.page = "404: Not Found"
     u2 = json.loads(c.settle(held))
-    check_("a not-found body is UNCLEAR and moves nothing", u2["verdict"] == "UNCLEAR" and json.loads(c.status(held))["status"] == "FUNDED")
-    check_("no balance moved on an unreadable settlement", bal(c, PROVIDER) == 100 and bal(c, BUYER) == 250)
+    check_("a not-found body is UNCLEAR and moves nothing", u2["verdict"] == "UNCLEAR" and gl.evm.transfers == [])
 
-    print("\nthe book counts what moved")
+    print("\nthe book counts what it held and moved")
     size = json.loads(c.size())
     check_("one released, one refunded, one still funded", size["released"] == 1 and size["refunded"] == 1 and size["funded"] == 1)
-    check_("the totals match the escrows moved", size["released_units"] == 100 and size["refunded_units"] == 250)
+    check_("the totals match the deposits", size["released_units"] == str(ESCROW) and size["refunded_units"] == "250" and size["escrow_held"] == "70")
 
     failed = [label for label, ok in RESULTS if not ok]
     print()
     if failed:
         print("%d of %d checks failed" % (len(failed), len(RESULTS)))
         return 1
-    print("%d checks, all through open_sla() and settle() on a real Backstop, the window enforced"
+    print("%d checks, all through open_sla() and settle() on a real Backstop, with a real deposit"
           % len(RESULTS))
     return 0
 

@@ -1,0 +1,115 @@
+{
+  "proved_at": "2026-10-02T19:32:24.507Z",
+  "network": "genlayer studionet",
+  "contract": "0xbFadB1CC427af612582614B69605BfDEf177E23F",
+  "escrow_wei": "1000000000000000000",
+  "deposited": "2000000000000000000",
+  "provider_delta": "1000000000000000000",
+  "buyer_delta": "1000000000000000000",
+  "met": {
+    "id": "2",
+    "buyer": "0x80519c53f10d731e4ff83a7d9acd69cf98da6258",
+    "provider": "0x0b57877ec84d96b672cd47d8ea4424283fdb9f6c",
+    "opened_at": "2026-10-02T19:28:18.285426+00:00",
+    "service": "Example API",
+    "status_url": "https://raw.githubusercontent.com/JspIIV/backstop/master/docs/status-good.txt",
+    "target": "99.9% uptime with no single outage longer than one hour, across the window",
+    "window_end": 1790969364,
+    "window_iso": "2026-10-02 19:29 UTC",
+    "opened_iso": "2026-10-02 19:28 UTC",
+    "escrow": "1000000000000000000",
+    "status": "RELEASED",
+    "settlements": 1,
+    "verdict": "MET",
+    "figure": "99.98%",
+    "reason": "The page reports 99.98% uptime, no incidents, and zero minutes of outage, satisfying both the 99.9% uptime and no-single-outage-longer-than-one-hour requirements.",
+    "quote": "The service met its availability target across the entire window with no outage.",
+    "settled_at": "2026-10-02T19:29:42.461393+00:00"
+  },
+  "missed": {
+    "id": "3",
+    "buyer": "0x80519c53f10d731e4ff83a7d9acd69cf98da6258",
+    "provider": "0x0b57877ec84d96b672cd47d8ea4424283fdb9f6c",
+    "opened_at": "2026-10-02T19:28:42.028747+00:00",
+    "service": "Example API",
+    "status_url": "https://raw.githubusercontent.com/JspIIV/backstop/master/docs/status-bad.txt",
+    "target": "99.9% uptime with no single outage longer than one hour, across the window",
+    "window_end": 1790969364,
+    "window_iso": "2026-10-02 19:29 UTC",
+    "opened_iso": "2026-10-02 19:28 UTC",
+    "escrow": "1000000000000000000",
+    "status": "REFUNDED",
+    "settlements": 1,
+    "verdict": "MISSED",
+    "figure": "96.2% uptime, 1 major outage, 6 hours 14 minutes longest outage",
+    "reason": "The uptime was below 99.9% and the outage exceeded the one-hour maximum allowed by the SLA.",
+    "quote": "A prolonged outage took the API offline for over six hours during this window, bringing measured availability well below the target.",
+    "settled_at": "2026-10-02T19:31:03.579245+00:00"
+  },
+  "size": {
+    "total": 4,
+    "funded": 0,
+    "released": 2,
+    "refunded": 2,
+    "escrow_held": "0",
+    "released_units": "2000000000000000000",
+    "refunded_units": "2000000000000000000"
+  },
+  "checks": [
+    {
+      "label": "opening two SLAs deposits both escrows into the contract",
+      "ok": true
+    },
+    {
+      "label": "a status page showing the target met releases to the provider",
+      "ok": true
+    },
+    {
+      "label": "the deposit actually reaches the provider on chain",
+      "ok": true
+    },
+    {
+      "label": "a status page showing an outage refunds the buyer",
+      "ok": true
+    },
+    {
+      "label": "the deposit actually returns to the buyer on chain",
+      "ok": true
+    },
+    {
+      "label": "both deposits leave the contract",
+      "ok": true
+    }
+  ],
+  "transcript": [
+    "Backstop real escrow, proven on GenLayer Studio",
+    "  buyer(padv) 0x80519c53f10d731e4ff83a7d9acd69cf98da6258  provider(ppub) 0x0b57877ec84d96b672cd47d8ea4424283fdb9f6c",
+    "using existing contract 0xbFadB1CC427af612582614B69605BfDEf177E23F",
+    "",
+    "opening two SLAs, depositing 1 GEN escrow each...",
+    "  #2 (good status) and #3 (outage) opened",
+    "  contract balance 0 -> 2000000000000000000 (two deposits held)",
+    "",
+    "waiting 26s for the window to close...",
+    "settling the good SLA #2 (should release to the provider)...",
+    "  met: RELEASED v=MET (30s)",
+    "  release landed ~24s",
+    "  provider balance 4137988666666666666665 -> 4138988666666666666665 (delta 1000000000000000000)",
+    "settling the outage SLA #3 (should refund the buyer)...",
+    "  missed: REFUNDED v=MISSED (24s)",
+    "  refund landed ~12s",
+    "  buyer balance 6121425666666666666668 -> 6122425666666666666668 (delta 1000000000000000000)",
+    "  contract balance now 0 (both deposits paid out)",
+    "",
+    "book: {\"total\":4,\"funded\":0,\"released\":2,\"refunded\":2,\"escrow_held\":\"0\",\"released_units\":\"2000000000000000000\",\"refunded_units\":\"2000000000000000000\"}",
+    "",
+    "  ok   opening two SLAs deposits both escrows into the contract",
+    "  ok   a status page showing the target met releases to the provider",
+    "  ok   the deposit actually reaches the provider on chain",
+    "  ok   a status page showing an outage refunds the buyer",
+    "  ok   the deposit actually returns to the buyer on chain",
+    "  ok   both deposits leave the contract",
+    "",
+    "6 checks. The status page released the real deposit to the provider or refunded it to the buyer."
+  ]
+}
